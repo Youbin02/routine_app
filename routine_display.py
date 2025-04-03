@@ -19,10 +19,10 @@ bus = 0
 device = 0 
 
 # MySQL configuration
-MYSQL_HOST = "localhost"  # MySQL 호스트
-MYSQL_USER = "your_username"  # MySQL 사용자명
-MYSQL_PASSWORD = "your_password"  # MySQL 비밀번호
-MYSQL_DATABASE = "routine_db"  # 데이터베이스 이름
+MYSQL_HOST = "192.168.1.15"
+MYSQL_USER = "root"
+MYSQL_PASSWORD = "webweb"
+MYSQL_DATABASE = "routine_db"
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -42,10 +42,11 @@ def connect_to_mysql():
 def get_routine_icon():
     """현재 시간과 일치하는 routine 테이블의 icon 데이터 가져오기"""
     try:
-        # 현재 RPi의 날짜와 시간
         now = datetime.now()
         current_date = now.date()
         current_time = now.time()
+        
+        logging.info(f"Checking DB - Date: {current_date}, Time: {current_time.hour}:{current_time.minute}")
         
         db = connect_to_mysql()
         if db is None:
@@ -53,7 +54,6 @@ def get_routine_icon():
             
         cursor = db.cursor()
         
-        # 2초 간격으로 시간 비교 (초는 제외)
         query = """
         SELECT icon 
         FROM routine 
@@ -82,52 +82,54 @@ def main():
         disp.clear()
         disp.bl_DutyCycle(50)
 
-        # 기본 이미지 생성
-        image1 = Image.new("RGB", (disp.width, disp.height), "BLACK")
-        draw = ImageDraw.Draw(image1)
-
-        # 기본 디자인 (원과 선)
-        draw.arc((1,1,239,239),0,360,fill=(0,0,255))
-        draw.arc((2,2,238,238),0,360,fill=(0,0,255))
-        draw.arc((3,3,237,237),0,360,fill=(0,0,255))
-        
-        draw.line([(120,1),(120,12)],fill=(128,255,128),width=4)
-        draw.line([(120,227),(120,239)],fill=(128,255,128),width=4)
-        draw.line([(1,120),(12,120)],fill=(128,255,128),width=4)
-        draw.line([(227,120),(239,120)],fill=(128,255,128),width=4)
-
-        # 텍스트
-        Font1 = ImageFont.truetype("../Font/Font01.ttf",25)
-        Font2 = ImageFont.truetype("../Font/Font01.ttf",35)
-        draw.text((40, 50), 'Routine', fill=(128,255,128), font=Font2)
+        # 폰트 설정
+        Font1 = ImageFont.truetype("../Font/Font01.ttf", 25)
+        Font2 = ImageFont.truetype("../Font/Font01.ttf", 35)
 
         while True:
-            # MySQL에서 아이콘 데이터 가져오기
+            # 현재 시간 가져오기 (2초마다 갱신)
+            now = datetime.now()
+            current_time_str = now.strftime("%H:%M")  # "HH:MM" 형식으로 시간 문자열 생성
+
+            # 빈 이미지 생성
+            image1 = Image.new("RGB", (disp.width, disp.height), "BLACK")
+            draw = ImageDraw.Draw(image1)
+
+            # 기본 디자인 (원과 선)
+            draw.arc((1,1,239,239), 0, 360, fill=(0,0,255))
+            draw.arc((2,2,238,238), 0, 360, fill=(0,0,255))
+            draw.arc((3,3,237,237), 0, 360, fill=(0,0,255))
+            draw.line([(120,1),(120,12)], fill=(128,255,128), width=4)
+            draw.line([(120,227),(120,239)], fill=(128,255,128), width=4)
+            draw.line([(1,120),(12,120)], fill=(128,255,128), width=4)
+            draw.line([(227,120),(239,120)], fill=(128,255,128), width=4)
+
+            # 현재 시간 표시
+            draw.text((70, 50), f"Time: {current_time_str}", fill=(128,255,128), font=Font2)
+
+            # 데이터베이스에서 아이콘 가져오기
             icon_file = get_routine_icon()
-            
+
             if icon_file:
-                # 아이콘 파일 경로 설정
                 image_path = f"../pic/{icon_file}.jpg"
-                
                 if os.path.exists(image_path):
-                    # 이미지 로드 및 표시
+                    # 아이콘 이미지 로드 및 표시
                     icon_image = Image.open(image_path)
                     im_r = icon_image.rotate(180)
                     disp.ShowImage(im_r)
                     logging.info(f"Displaying icon: {icon_file}")
                 else:
-                    # 기본 이미지 표시 (아이콘 파일이 없을 경우)
+                    # 아이콘 파일 없음 메시지
+                    draw.text((40, 150), f"Icon: {icon_file} (Not Found)", fill="WHITE", font=Font1)
                     im_r = image1.rotate(180)
-                    draw.text((40, 150), 'No Icon', fill="WHITE", font=Font2)
                     disp.ShowImage(im_r)
-                    logging.warning(f"Icon file not found: {image_path}")
             else:
-                # 일치하는 루틴이 없을 경우
+                # 루틴 없음 메시지
+                draw.text((40, 150), "No Routine", fill="WHITE", font=Font2)
                 im_r = image1.rotate(180)
-                draw.text((40, 150), 'No Routine', fill="WHITE", font=Font2)
                 disp.ShowImage(im_r)
 
-            # 2초 대기
+            # 2초 대기 (다음 갱신까지)
             time.sleep(2)
 
     except IOError as e:
