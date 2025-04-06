@@ -56,7 +56,16 @@ def compare_time(date_str, time_str):
     current = datetime.now()
     current_date = current.strftime("%Y-%m-%d")
     current_time = current.strftime("%H:%M")
-    db_time = time_str.strftime("%H:%M") if isinstance(time_str, datetime) else time_str[:5]
+
+    # time_str이 timedelta 객체일 경우 처리
+    if isinstance(time_str, datetime.timedelta):
+        total_seconds = int(time_str.total_seconds())
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        db_time = f"{hours:02d}:{minutes:02d}"
+    else:
+        db_time = str(time_str)[:5]
+
     return current_date == date_str and current_time == db_time
 
 def main():
