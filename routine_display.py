@@ -6,7 +6,7 @@ import time
 import logging
 import spidev as SPI
 import mysql.connector
-from datetime import datetime
+from datetime import datetime, time as dtime, timedelta
 from PIL import Image
 sys.path.append("..")
 from lib import LCD_1inch28
@@ -44,7 +44,8 @@ def get_routine_data():
         query = "SELECT date, start_time, icon FROM routine"
         cursor.execute(query)
         data = cursor.fetchall()
-        return data 
+        logging.info(f"Fetched data: {data}")
+        return data
     except mysql.connector.Error as err:
         logging.error(f"Query failed: {err}")
         return None
@@ -58,21 +59,21 @@ def compare_time(date_str, time_str):
     current_time = current.strftime("%H:%M")
 
     # time_str 타입에 따른 처리
-    if isinstance(time_str, datetime.time):
-        # datetime.time 객체일 경우
+    if isinstance(time_str, dtime):
         db_time = f"{time_str.hour:02d}:{time_str.minute:02d}"
-    elif isinstance(time_str, datetime.timedelta):
-        # timedelta 객체일 경우
+    elif isinstance(time_str, timedelta):
         total_seconds = int(time_str.total_seconds())
         hours = total_seconds // 3600
         minutes = (total_seconds % 3600) // 60
         db_time = f"{hours:02d}:{minutes:02d}"
     else:
-        # 문자열일 경우
         db_time = str(time_str)[:5]
 
-    logging.info(f"Comparing: current_time={current_time}, db_time={db_time}")
-    return current_date == date_str and current_time == db_time
+    # 디버깅용 로그 강화
+    logging.info(f"Comparing: current_date={current_date}, db_date={date_str}, current_time={current_time}, db_time={db_time}")
+    is_match = current_date == str(date_str) and current_time == db_time
+    logging.info(f"Match result: {is_match}")
+    return is_match
 
 def main():
     disp = LCD_1inch28.LCD_1inch28()
@@ -84,24 +85,31 @@ def main():
     while not found_match:
         routines = get_routine_data()
         if routines is None:
+            logging.warning("No data fetched, retrying in 2 seconds")
             time.sleep(2)
             continue
 
         for routine in routines:
             date_str, start_time, icon = routine
+            logging.info(f"Processing routine: date={date_str}, start_time={start_time}, icon={icon}")
             if compare_time(date_str, start_time):
                 image_path = os.path.join("/home/pi/APP_icon/", icon)
+                logging.info(f"Attempting to load image: {image_path}")
                 if os.path.exists(image_path):
                     image = Image.open(image_path)
                     im_r = image.rotate(180)
                     disp.ShowImage(im_r)
                     logging.info(f"Displaying icon: {icon}")
                     found_match = True
-                break
+                else:
+                    logging.error(f"Image file not found: {image_path}")
+                break  # 일치하는 첫 번째 레코드만 처리
 
         if not found_match:
+            logging.info("No match found, waiting 2 seconds")
             time.sleep(2)
 
+    logging.info("Match found, entering idle loop")
     while True:
         time.sleep(60)
 
