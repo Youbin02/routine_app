@@ -44,7 +44,7 @@ def get_routine_data():
         query = "SELECT date, start_time, icon FROM routine"
         cursor.execute(query)
         data = cursor.fetchall()
-        return data
+        return data 
     except mysql.connector.Error as err:
         logging.error(f"Query failed: {err}")
         return None
@@ -57,15 +57,21 @@ def compare_time(date_str, time_str):
     current_date = current.strftime("%Y-%m-%d")
     current_time = current.strftime("%H:%M")
 
-    # time_str이 timedelta 객체일 경우 처리
-    if isinstance(time_str, datetime.timedelta):
+    # time_str 타입에 따른 처리
+    if isinstance(time_str, datetime.time):
+        # datetime.time 객체일 경우
+        db_time = f"{time_str.hour:02d}:{time_str.minute:02d}"
+    elif isinstance(time_str, datetime.timedelta):
+        # timedelta 객체일 경우
         total_seconds = int(time_str.total_seconds())
         hours = total_seconds // 3600
         minutes = (total_seconds % 3600) // 60
         db_time = f"{hours:02d}:{minutes:02d}"
     else:
+        # 문자열일 경우
         db_time = str(time_str)[:5]
 
+    logging.info(f"Comparing: current_time={current_time}, db_time={db_time}")
     return current_date == date_str and current_time == db_time
 
 def main():
