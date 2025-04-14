@@ -12,15 +12,15 @@ public class Timer {
 
     @ManyToOne
     @JoinColumn(name = "user_id")
-    private User user;
+    private User user;              // 타이머 사용자 구분
 
-    private String timerName;
-    private LocalDate date;
-    private int durationHours;
-    private int durationMinutes;
-    private String icon;
-    private boolean completed;
-
+    private String timerName;       // 타이머 내용
+    private LocalDate date;         // 타이머 날짜
+    private int durationHours;      // 타이머 지속 시간 (hour)
+    private int durationMinutes;    // 타이머 지속 시간 (minute)
+    private String icon;            // 타이머 LCD 아이콘 이름
+    private boolean completed;      // 타이머 달성 여부
+    
     // 기본 생성자
     public Timer() {}
 
