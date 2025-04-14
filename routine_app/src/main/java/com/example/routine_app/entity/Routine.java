@@ -12,15 +12,16 @@ public class Routine {
 
     @ManyToOne
     @JoinColumn(name = "user_id")
-    private User user;
+    private User user;              // 루틴 사용자 구분
 
-    private String routineName;
-    private LocalDate date;
-    private LocalTime startTime;
-    private int durationHours;
-    private int durationMinutes;
-    private String icon;
-    private boolean completed;
+    private String groupRoutineName; // 상위 루틴 이름 (세부 루틴들을 묶는 분류)
+    private String routineName;     // 루틴 세부 내용
+    private LocalDate date;         // 루틴 날짜
+    private LocalTime startTime;    // 루틴 시작 시간
+    private int durationHours;      // 루틴 지속 시간 (hour)
+    private int durationMinutes;    // 루틴 지속 시간 (minute)
+    private String icon;            // 루틴 LCD 아이콘 이름
+    private boolean completed;      // 루틴 완료 여부
 
     // 기본 생성자
     public Routine() {}
@@ -32,6 +33,10 @@ public class Routine {
 
     public User getUser() {
         return user;
+    }
+
+    public String getGroupRoutineName() {
+        return groupRoutineName;
     }
 
     public String getRoutineName() {
@@ -69,6 +74,10 @@ public class Routine {
 
     public void setUser(User user) {
         this.user = user;
+    }
+
+    public void setGroupRoutineName(String groupRoutineName) {
+        this.groupRoutineName = groupRoutineName;
     }
 
     public void setRoutineName(String routineName) {
