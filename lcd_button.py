@@ -13,8 +13,8 @@ sys.path.append("/home/pi/LCD_final")
 from LCD_1inch28 import LCD_1inch28
 
 # GPIO 버튼 설정
-button1 = Button(5)
-button2 = Button(6)
+button1 = Button(5, pull_up=False, bounce_time=0.05)
+button2 = Button(6, pull_up=False, bounce_time=0.05)
 
 # SQLite DB 경로
 DB_PATH = '/home/pi/routine_db.db'
