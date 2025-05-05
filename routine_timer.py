@@ -133,49 +133,40 @@ def update_timer_status(timer_id, status):
         conn.close()
 
 def run_timer(timer_id, sec, disp, background_img=None):
-    from PIL import ImageFont
+    # 버튼3이 눌려 있는 상태라면 손 떼기를 기다림 (중복 종료 방지)
+    while button3.is_pressed:
+        time.sleep(0.1)
 
-    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-    font_large = ImageFont.truetype(font_path, 48)
-    font_small = ImageFont.truetype(font_path, 24)
+    # 아이콘 또는 기본 배경 표시
+    if background_img:
+        image = background_img.copy()
+    else:
+        image = Image.new("RGB", (240, 240), "BLACK")
+
+    disp.ShowImage(image.rotate(180))
+    logging.info("타이머 실행 시작됨")
 
     start = time.time()
     end = start + sec
     interrupted = False
 
     while time.time() < end:
-        remaining = int(end - time.time())
-        h = remaining // 3600
-        m = (remaining % 3600) // 60
-        s = remaining % 60
-
-        if background_img:
-            image = background_img.copy()
-        else:
-            image = Image.new("RGB", (240, 240), "BLACK")
-
-        draw = ImageDraw.Draw(image)
-        time_str = f"{h:02}:{m:02}:{s:02}"
-
-        draw.text((50, 80), "Timer Running", fill="WHITE", font=font_small)
-        draw.text((40, 130), time_str, fill="YELLOW", font=font_large)
-
-        disp.ShowImage(image.rotate(180))
-
         if button3.is_pressed:
             interrupted = True
+            logging.info("타이머 조기 종료")
             break
-        time.sleep(1)
+        time.sleep(0.1)
 
     if interrupted:
-        update_timer_status(timer_id, 1)
+        update_timer_status(timer_id, 1)  # 완료 처리
     else:
         buzzer.on()
         time.sleep(2)
         buzzer.off()
-        update_timer_status(timer_id, 0)
+        update_timer_status(timer_id, 0)  # 시간 초과 → 실패 처리
 
     disp.clear()
+    logging.info("타이머 종료 및 LCD 클리어됨")
 
 def timer_loop(disp):
     timers = get_timer_data()
