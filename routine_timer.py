@@ -8,6 +8,7 @@ import sqlite3
 from datetime import datetime
 from PIL import Image
 from gpiozero import Button, Buzzer
+from PIL import Image, ImageDraw, ImageFont
 
 # 라이브러리 경로 추가
 sys.path.append("/home/pi/LCD_final")
@@ -131,11 +132,10 @@ def update_timer_status(timer_id, status):
         cursor.close()
         conn.close()
 
-from PIL import Image, ImageDraw, ImageFont
-
 def run_timer(timer_id, sec, disp, background_img=None):
-    # 글꼴 불러오기
-    font_path = "/home/pi/Font/Font01.ttf"
+    from PIL import ImageFont
+
+    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     font_large = ImageFont.truetype(font_path, 48)
     font_small = ImageFont.truetype(font_path, 24)
 
@@ -149,7 +149,6 @@ def run_timer(timer_id, sec, disp, background_img=None):
         m = (remaining % 3600) // 60
         s = remaining % 60
 
-        # 배경 이미지 또는 새 이미지 생성
         if background_img:
             image = background_img.copy()
         else:
@@ -157,29 +156,24 @@ def run_timer(timer_id, sec, disp, background_img=None):
 
         draw = ImageDraw.Draw(image)
         time_str = f"{h:02}:{m:02}:{s:02}"
-        draw.text((50, 80), "timer is running", fill="WHITE", font=font_small)
+
+        draw.text((50, 80), "Timer Running", fill="WHITE", font=font_small)
         draw.text((40, 130), time_str, fill="YELLOW", font=font_large)
 
-        # 이미지 회전 후 출력
-        im_r = image.rotate(90)
-        disp.ShowImage(im_r)
+        disp.ShowImage(image.rotate(180))
 
-        # 버튼3 눌림 감지 (조기 종료)
         if button3.is_pressed:
             interrupted = True
             break
         time.sleep(1)
 
-    # 종료 후 상태 처리
     if interrupted:
         update_timer_status(timer_id, 1)
-        logging.info("타이머 조기 종료됨")
     else:
         buzzer.on()
         time.sleep(2)
         buzzer.off()
         update_timer_status(timer_id, 0)
-        logging.info("타이머 자동 종료됨")
 
     disp.clear()
 
