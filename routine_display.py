@@ -4,8 +4,7 @@ import os
 import sys
 import time
 import logging
-import spidev as SPI
-import mysql.connector
+import sqlite3
 from datetime import datetime, time as dtime, timedelta
 from PIL import Image
 sys.path.append("..")
@@ -19,19 +18,14 @@ bus = 0
 device = 0
 logging.basicConfig(level=logging.DEBUG)
 
-# MySQL connection configuration
-MYSQL_CONFIG = {
-    'user': 'imopen',
-    'password': 'imbest',
-    'host': '192.168.92.200',  # 노트북 IP
-    'database': 'routine_db',
-    'port': 3306
-}
+# SQLite DB 경로
+DB_PATH = '/home/pi/routine_db.db'
 
 def connect_db():
     try:
-        return mysql.connector.connect(**MYSQL_CONFIG)
-    except mysql.connector.Error as err:
+        conn = sqlite3.connect(DB_PATH)
+        return conn
+    except sqlite3.Error as err:
         logging.error(f"DB connection failed: {err}")
         return None
 
@@ -41,12 +35,12 @@ def get_routine_data():
         return None
     try:
         cursor = conn.cursor()
-        query = "SELECT date, start_time, icon FROM routine"
+        query = "SELECT date, start_time, icon FROM routines"
         cursor.execute(query)
         data = cursor.fetchall()
         logging.info(f"Fetched data: {data}")
         return data
-    except mysql.connector.Error as err:
+    except sqlite3.Error as err:
         logging.error(f"Query failed: {err}")
         return None
     finally:
@@ -58,7 +52,6 @@ def compare_time(date_str, time_str):
     current_date = current.strftime("%Y-%m-%d")
     current_time = current.strftime("%H:%M")
 
-    # time_str 타입에 따른 처리
     if isinstance(time_str, dtime):
         db_time = f"{time_str.hour:02d}:{time_str.minute:02d}"
     elif isinstance(time_str, timedelta):
@@ -69,7 +62,6 @@ def compare_time(date_str, time_str):
     else:
         db_time = str(time_str)[:5]
 
-    # 디버깅용 로그 강화
     logging.info(f"Comparing: current_date={current_date}, db_date={date_str}, current_time={current_time}, db_time={db_time}")
     is_match = current_date == str(date_str) and current_time == db_time
     logging.info(f"Match result: {is_match}")
@@ -103,7 +95,7 @@ def main():
                     found_match = True
                 else:
                     logging.error(f"Image file not found: {image_path}")
-                break  # 일치하는 첫 번째 레코드만 처리
+                break
 
         if not found_match:
             logging.info("No match found, waiting 2 seconds")
