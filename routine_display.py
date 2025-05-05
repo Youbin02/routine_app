@@ -89,6 +89,7 @@ def main():
                 logging.info(f"Attempting to load image: {image_path}")
                 if os.path.exists(image_path):
                     image = Image.open(image_path)
+                    image = image.resize((240, 240))
                     im_r = image.rotate(180)
                     disp.ShowImage(im_r)
                     logging.info(f"Displaying icon: {icon}")
