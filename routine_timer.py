@@ -131,28 +131,55 @@ def update_timer_status(timer_id, status):
         cursor.close()
         conn.close()
 
-def run_timer(timer_id, sec, disp, image):
-    disp.ShowImage(image)
-    time.sleep(1)
+from PIL import Image, ImageDraw, ImageFont
+
+def run_timer(timer_id, sec, disp, background_img=None):
+    # 글꼴 불러오기
+    font_path = "/home/pi/Font/Font01.ttf"
+    font_large = ImageFont.truetype(font_path, 48)
+    font_small = ImageFont.truetype(font_path, 24)
+
     start = time.time()
     end = start + sec
     interrupted = False
 
     while time.time() < end:
+        remaining = int(end - time.time())
+        h = remaining // 3600
+        m = (remaining % 3600) // 60
+        s = remaining % 60
+
+        # 배경 이미지 또는 새 이미지 생성
+        if background_img:
+            image = background_img.copy()
+        else:
+            image = Image.new("RGB", (240, 240), "BLACK")
+
+        draw = ImageDraw.Draw(image)
+        time_str = f"{h:02}:{m:02}:{s:02}"
+        draw.text((50, 80), "timer is running", fill="WHITE", font=font_small)
+        draw.text((40, 130), time_str, fill="YELLOW", font=font_large)
+
+        # 이미지 회전 후 출력
+        im_r = image.rotate(90)
+        disp.ShowImage(im_r)
+
+        # 버튼3 눌림 감지 (조기 종료)
         if button3.is_pressed:
             interrupted = True
             break
-        time.sleep(0.1)
+        time.sleep(1)
 
+    # 종료 후 상태 처리
     if interrupted:
         update_timer_status(timer_id, 1)
-        logging.info("타이머 조기 종료")
+        logging.info("타이머 조기 종료됨")
     else:
         buzzer.on()
         time.sleep(2)
         buzzer.off()
         update_timer_status(timer_id, 0)
-        logging.info("타이머 자동 종료")
+        logging.info("타이머 자동 종료됨")
 
     disp.clear()
 
@@ -171,7 +198,7 @@ def timer_loop(disp):
             timer_id, h, m, icon, name = timer
             image_path = os.path.join(ICON_PATH, icon)
             if os.path.exists(image_path):
-                image = Image.open(image_path).resize((240, 240)).rotate(180)
+                image = Image.open(image_path).resize((240, 240)).rotate(90)
                 disp.ShowImage(image)
                 logging.info(f"타이머 선택됨: {name}")
             else:
@@ -191,7 +218,7 @@ def timer_loop(disp):
             timer_id, h, m, icon, name = timer
             image_path = os.path.join(ICON_PATH, icon)
             if os.path.exists(image_path):
-                image = Image.open(image_path).resize((240, 240)).rotate(180)
+                image = Image.open(image_path).resize((240, 240)).rotate(90)
                 duration_sec = h * 3600 + m * 60
                 run_timer(timer_id, duration_sec, disp, image)
                 return
@@ -216,7 +243,7 @@ def main():
             if compare_time(start_time):
                 img_path = os.path.join(ICON_PATH, icon)
                 if os.path.exists(img_path):
-                    img = Image.open(img_path).resize((240, 240)).rotate(180)
+                    img = Image.open(img_path).resize((240, 240)).rotate(90)
                     if handle_routine(routine_id, h, m, img, disp):
                         routine_matched = True
                         break
