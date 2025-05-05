@@ -34,8 +34,15 @@ def get_routine_data():
         return None
     try:
         cursor = conn.cursor()
-        query = "SELECT id, date, start_time, icon, duration_hours, duration_minutes FROM routines"
-        cursor.execute(query)
+
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        query = """
+        SELECT id, date, start_time, icon, duration_hours, duration_minutes 
+        FROM routines 
+        WHERE completed = 0 AND date = ?
+        """
+        cursor.execute(query, (today,))
         return cursor.fetchall()
     except sqlite3.Error as err:
         logging.error(f"Query failed: {err}")
