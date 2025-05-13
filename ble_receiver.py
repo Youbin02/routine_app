@@ -1,4 +1,4 @@
-from bluedot import BluetoothServer
+import bluetooth
 import json
 import sqlite3
 import logging
@@ -28,9 +28,9 @@ def insert_routine(data):
             data.get("group_routine_name")
         ))
         conn.commit()
-        logging.info("루틴 삽입 완료")
+        logging.info("✅ 루틴 삽입 완료")
     except Exception as e:
-        logging.error(f"루틴 삽입 실패: {e}")
+        logging.error(f"❌ 루틴 삽입 실패: {e}")
     finally:
         conn.close()
 
@@ -47,22 +47,21 @@ def insert_timer(data):
             0,
             data["duration_hours"],
             data["duration_minutes"],
-            data.get("rest", 0),  # JSON에 rest가 없으면 0으로 기본 처리
+            data.get("rest", 0),
             data["icon"],
             data["timer_name"],
             data["user_id"]
         ))
         conn.commit()
-        logging.info("타이머 삽입 완료")
+        logging.info("✅ 타이머 삽입 완료")
     except Exception as e:
-        logging.error(f"타이머 삽입 실패: {e}")
+        logging.error(f"❌ 타이머 삽입 실패: {e}")
     finally:
         conn.close()
 
-def data_received(data):
+def handle_data(text):
     try:
-        text = data.strip()
-        logging.info(f"수신된 데이터: {text}")
+        logging.info(f"📩 수신된 데이터: {text}")
         parsed = json.loads(text)
         dtype = parsed.get("type")
 
@@ -71,17 +70,38 @@ def data_received(data):
         elif dtype == "timer":
             insert_timer(parsed)
         else:
-            logging.warning("알 수 없는 데이터 타입 수신")
+            logging.warning("⚠️ 알 수 없는 타입 수신")
+    except json.JSONDecodeError as e:
+        logging.error(f"❌ JSON 파싱 실패: {e}")
     except Exception as e:
-        logging.error(f"JSON 파싱 오류: {e}")
+        logging.error(f"❌ 처리 중 예외 발생: {e}")
 
-# 블루투스 서버 실행
-server = BluetoothServer(data_received)
-logging.info("📡 블루투스 서버 시작됨 - 연결 대기 중...")
+def run_bluetooth_server():
+    server_sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
+    port = 1
+    server_sock.bind(("", port))
+    server_sock.listen(1)
 
-try:
-    while True:
-        pass  # 프로그램이 계속 실행되도록 유지
-except KeyboardInterrupt:
-    server.stop()
-    logging.info("서버 종료됨")
+    logging.info("📡 Bluetooth 서버 시작됨 - 연결 대기 중...")
+
+    try:
+        client_sock, client_info = server_sock.accept()
+        logging.info(f"🔗 연결됨: {client_info}")
+
+        while True:
+            data = client_sock.recv(1024)
+            if not data:
+                break
+            handle_data(data.decode("utf-8").strip())
+
+    except KeyboardInterrupt:
+        logging.info("🛑 서버 수동 종료됨.")
+    except Exception as e:
+        logging.error(f"❌ 서버 오류: {e}")
+    finally:
+        client_sock.close()
+        server_sock.close()
+        logging.info("🔌 연결 종료됨.")
+
+if __name__ == "__main__":
+    run_bluetooth_server()
