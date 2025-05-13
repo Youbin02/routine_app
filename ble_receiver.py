@@ -77,31 +77,35 @@ def handle_data(text):
         logging.error(f"❌ 처리 중 예외 발생: {e}")
 
 def run_bluetooth_server():
-    server_sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
-    port = 1
-    server_sock.bind(("", port))
-    server_sock.listen(1)
-
-    logging.info("📡 Bluetooth 서버 시작됨 - 연결 대기 중...")
-
     try:
+        server_sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
+        port = 1
+        server_sock.bind(("", port))
+        server_sock.listen(1)
+        logging.info("📡 Bluetooth 서버 시작됨 - 포트 1에서 연결 대기 중...")
+
         client_sock, client_info = server_sock.accept()
-        logging.info(f"🔗 연결됨: {client_info}")
+        logging.info(f"🔗 클라이언트 연결됨: {client_info}")
 
         while True:
             data = client_sock.recv(1024)
             if not data:
+                logging.info("📴 클라이언트 연결 종료됨")
                 break
-            handle_data(data.decode("utf-8").strip())
+            try:
+                handle_data(data.decode("utf-8").strip())
+            except Exception as e:
+                logging.error(f"❌ 데이터 처리 중 오류: {e}")
 
-    except KeyboardInterrupt:
-        logging.info("🛑 서버 수동 종료됨.")
     except Exception as e:
-        logging.error(f"❌ 서버 오류: {e}")
+        logging.error(f"❌ 블루투스 서버 시작 실패: {e}")
     finally:
-        client_sock.close()
-        server_sock.close()
-        logging.info("🔌 연결 종료됨.")
+        try:
+            client_sock.close()
+            server_sock.close()
+        except:
+            pass
+        logging.info("🔌 Bluetooth 서버 종료됨.")
 
 if __name__ == "__main__":
     run_bluetooth_server()
