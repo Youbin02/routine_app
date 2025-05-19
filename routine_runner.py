@@ -67,7 +67,15 @@ def compare_time(start_time_str):
     start_time = datetime.strptime(start_time_str, "%H:%M:%S").replace(
         year=now.year, month=now.month, day=now.day
     )
-    return now >= start_time
+
+    print(f"🕒 현재 시각: {now.strftime('%H:%M:%S')}, 루틴 시작 시각: {start_time.strftime('%H:%M:%S')}")
+
+    if now >= start_time:
+        print("complete!")
+        return True
+    else:
+        print("not yet")
+        return False
 
 def handle_routine(routine, disp):
     routine_id, start_time, icon, minutes, name, group = routine
@@ -287,32 +295,25 @@ def run_routine_loop():
     disp.clear()
     disp.bl_DutyCycle(50)
 
-    group_started = {}
-
     while True:
         routines = get_today_routines()
         routine_matched = False
 
         for routine in routines:
             routine_id, start_time, icon, minutes, name, group = routine
-            if group not in group_started:
-                group_started[group] = False
 
             if compare_time(start_time):
-                if not group_started[group]:
-                    total_minutes = sum(r[3] for r in routines if r[5] == group)
-                    run_motor_routine(total_minutes)
-                    buzz()
-                    group_started[group] = True
+                print(f"good routine check: {name}")
+                img_path = os.path.join(ICON_PATH, icon)
 
-                if handle_routine(routine, disp):
-                    if all_group_routines_completed(group):
-                        buzz()
+                if os.path.exists(img_path):
+                    img = Image.open(img_path).resize((240, 240)).rotate(90)
+                    handle_routine(routine_id, minutes, img, disp)
                     routine_matched = True
-                    break
+                    break  # ← for 루틴 루프만 빠져나감
 
         if not routine_matched:
-            timer_loop(disp)
+            timer_loop(disp)  # 타이머 실행 (버튼1 누르면 LCD에 표시 등)
 
         time.sleep(1)
 
