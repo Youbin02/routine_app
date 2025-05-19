@@ -16,7 +16,7 @@ sys.path.append("/home/pi/LCD_final")
 from LCD_1inch28 import LCD_1inch28
 
 # 경로 및 설정
-DB_PATH = '/home/pi/routine_db.db'
+DB_PATH = '/home/pi/LCD_final/routine_db.db'
 ICON_PATH = '/home/pi/APP_icon/'
 BLE_MAC_ADDRESS = "5C:CB:99:84:52:2E"
 
