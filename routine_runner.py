@@ -7,6 +7,7 @@ from PIL import Image
 from gpiozero import Button, Buzzer
 from LCD_1inch28 import LCD_1inch28
 from motor_control import run_motor_routine, run_motor_timer
+from threading import Thread
 
 # 경로 설정
 DB_PATH = "/home/pi/LCD_final/routine_db.db"
@@ -179,7 +180,7 @@ def run_routine_loop():
                 img_path = os.path.join(ICON_PATH, icon)
                 if os.path.exists(img_path):
                     img = Image.open(img_path).resize((240, 240)).rotate(90)
-                    run_motor_routine(minutes)
+                    Thread(target=run_motor_routine, args=(minutes,)).start()
                     handle_routine(routine_id, minutes, img, disp)
                     break
                 else:
