@@ -10,6 +10,7 @@ import bluetooth
 from datetime import datetime
 from PIL import Image
 from gpiozero import Button, Buzzer
+from motor_control import run_motor_routine, run_motor_timer, cleanup_motor
 
 sys.path.append("/home/pi/LCD_final")
 from LCD_1inch28 import LCD_1inch28
@@ -221,6 +222,7 @@ def run_timer(timer_id, sec, disp, background_img=None, is_rest=False):
     disp.clear()
 
 def run_repeating_timer(timer_id, minutes, rest, count, disp, image):
+    run_motor_timer(minutes, rest, count)
     for i in range(count):
         logging.info(f"Round {i+1} begin")
         run_timer(timer_id, minutes * 60, disp, image, is_rest=False)
@@ -295,6 +297,8 @@ def run_routine_loop():
 
             if compare_time(start_time):
                 if not group_started[group]:
+                    total_minutes = sum(r[3] for r in routines if r[5] == group)
+                    run_motor_routine(total_minutes)
                     buzz()
                     group_started[group] = True
 
