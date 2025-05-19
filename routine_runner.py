@@ -3,21 +3,23 @@
 import os
 import sys
 import time
+import json
 import logging
 import sqlite3
+import bluetooth
 from datetime import datetime
 from PIL import Image
 from gpiozero import Button, Buzzer
 
-# LCD 라이브러리 경로 추가
 sys.path.append("/home/pi/LCD_final")
 from LCD_1inch28 import LCD_1inch28
 
-# DB 및 리소스 경로
+# 경로 및 설정
 DB_PATH = '/home/pi/routine_db.db'
 ICON_PATH = '/home/pi/APP_icon/'
+BLE_MAC_ADDRESS = "5C:CB:99:84:52:2E"
 
-# GPIO 설정
+# GPIO
 button1 = Button(5, pull_up=False, bounce_time=0.05)
 button2 = Button(6, pull_up=False, bounce_time=0.05)
 button3 = Button(26, pull_up=False, bounce_time=0.05)
@@ -25,12 +27,17 @@ buzzer = Buzzer(13)
 
 logging.basicConfig(level=logging.INFO)
 
-# ------------------ DB 연결 ------------------ #
+# ------------------ 공통 ------------------ #
+def buzz(duration=1):
+    buzzer.on()
+    time.sleep(duration)
+    buzzer.off()
+
 def connect_db():
     try:
         return sqlite3.connect(DB_PATH)
     except sqlite3.Error as err:
-        logging.error(f"DB 연결 실패: {err}")
+        logging.error(f"DB connect failed: {err}")
         return None
 
 # ------------------ 루틴 처리 ------------------ #
@@ -42,13 +49,13 @@ def get_today_routines():
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, start_time, icon, routine_minutes
+            SELECT id, start_time, icon, routine_minutes, routine_name, group_routine_name
             FROM routines
             WHERE date = ?
         """, (today,))
         return cursor.fetchall()
     except sqlite3.Error as e:
-        logging.error(f"루틴 쿼리 오류: {e}")
+        logging.error(f"routine query error: {e}")
         return []
     finally:
         cursor.close()
@@ -58,26 +65,90 @@ def compare_time(start_time):
     now = datetime.now().strftime("%H:%M")
     return now == str(start_time)[:5]
 
-def handle_routine(routine_id, minutes, image, disp):
+def handle_routine(routine, disp):
+    routine_id, start_time, icon, minutes, name, group = routine
     duration = minutes * 60
+    img_path = os.path.join(ICON_PATH, icon)
+    image = Image.open(img_path).resize((240, 240)).rotate(90)
+
+    buzz()  # 루틴 시작 알림
     disp.ShowImage(image)
-    time.sleep(1)  # 초기 입력 방지
+    time.sleep(1)
 
     start = time.time()
+    completed = 0
+
     while time.time() - start < duration:
         if button1.is_pressed:
-            logging.info("버튼1: 루틴 성공")
-            disp.clear()
-            return True
+            completed = 1
+            logging.info("routine success")
+            break
         elif button2.is_pressed:
-            logging.info("버튼2: 루틴 실패")
-            disp.clear()
-            return True
+            logging.info("routine fail")
+            break
         time.sleep(0.1)
 
-    logging.info("루틴 시간 초과 - 실패")
     disp.clear()
+    update_routine_status(routine_id, completed)
+    send_routine_status_via_ble(routine_id, completed)
     return True
+
+def update_routine_status(routine_id, status):
+    conn = connect_db()
+    if not conn:
+        return
+    try:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE routines SET completed = ? WHERE id = ?", (status, routine_id))
+        conn.commit()
+    except sqlite3.Error as e:
+        logging.error(f"routine state update error: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+def all_group_routines_completed(group_name):
+    conn = connect_db()
+    if not conn:
+        return False
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT COUNT(*) FROM routines
+        WHERE group_routine_name = ? AND completed = 0
+    """, (group_name,))
+    count = cursor.fetchone()[0]
+    cursor.close()
+    conn.close()
+    return count == 0
+
+def send_routine_status_via_ble(routine_id, status):
+    conn = connect_db()
+    if not conn:
+        return
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, routine_name, date, group_routine_name
+        FROM routines WHERE id = ?
+    """, (routine_id,))
+    row = cursor.fetchone()
+    if row:
+        data = {
+            "id": row[0],
+            "routine_name": row[1],
+            "date": row[2],
+            "group_routine_name": row[3],
+            "completed": status
+        }
+        try:
+            sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
+            sock.connect((BLE_MAC_ADDRESS, 1))
+            sock.send(json.dumps(data))
+            sock.close()
+            logging.info("[BLE] routine forwarding success")
+        except Exception as e:
+            logging.warning(f"[BLE] forwarding fail: {e}")
+    cursor.close()
+    conn.close()
 
 # ------------------ 타이머 처리 ------------------ #
 def get_timer_data():
@@ -92,13 +163,29 @@ def get_timer_data():
         """)
         return cursor.fetchall()
     except sqlite3.Error as e:
-        logging.error(f"타이머 쿼리 실패: {e}")
+        logging.error(f"timer query fail: {e}")
         return []
     finally:
         cursor.close()
         conn.close()
 
-def run_timer(timer_id, sec, disp, background_img=None):
+def get_minutes_until_next_routine():
+    routines = get_today_routines()
+    now = datetime.now()
+    times = []
+    for _, start_time, *_ in routines:
+        st = datetime.strptime(start_time, "%H:%M:%S").time()
+        dt = datetime.combine(now.date(), st)
+        delta = (dt - now).total_seconds() / 60
+        if delta > 0:
+            times.append(delta)
+    return min(times) if times else float('inf')
+
+def generate_rest_image():
+    img = Image.new("RGB", (240, 240), "navy")
+    return img
+
+def run_timer(timer_id, sec, disp, background_img=None, is_rest=False):
     while button3.is_pressed:
         time.sleep(0.1)
 
@@ -108,34 +195,46 @@ def run_timer(timer_id, sec, disp, background_img=None):
         image = Image.new("RGB", (240, 240), "BLACK")
 
     disp.ShowImage(image.rotate(180))
-    logging.info("타이머 실행 시작됨")
-
     start = time.time()
     end = start + sec
     interrupted = False
 
     while time.time() < end:
+        minutes_left = get_minutes_until_next_routine()
+        if minutes_left <= 5:
+            logging.info("5 minutes before starting the routine → Force stop timer")
+            break
+        elif minutes_left <= 10:
+            buzz()
+
         if button3.is_pressed:
             interrupted = True
-            logging.info("타이머 조기 종료")
             break
         time.sleep(0.1)
 
-    if interrupted:
-        logging.info("타이머 완료 처리")
-    else:
-        buzzer.on()
-        time.sleep(2)
-        buzzer.off()
-        logging.info("타이머 실패 처리 (시간 초과)")
-
+    if not is_rest:
+        if interrupted:
+            logging.info("Timer ends early")
+        else:
+            buzz(2)
+            logging.info("timer timeout")
     disp.clear()
-    logging.info("타이머 종료 및 LCD 클리어됨")
 
+def run_repeating_timer(timer_id, minutes, rest, count, disp, image):
+    for i in range(count):
+        logging.info(f"Round {i+1} begin")
+        run_timer(timer_id, minutes * 60, disp, image, is_rest=False)
+
+        if i < count - 1:
+            logging.info(f"rest {rest}min")
+            rest_img = generate_rest_image()
+            run_timer(timer_id, rest * 60, disp, rest_img, is_rest=True)
+
+# ------------------ 타이머 루프 ------------------ #
 def timer_loop(disp):
     timers = get_timer_data()
     if not timers:
-        logging.info("실행 가능한 타이머 없음")
+        logging.info("No runnable timers")
         return
 
     index = 0
@@ -145,35 +244,35 @@ def timer_loop(disp):
         if button1.is_pressed:
             timer = timers[index]
             timer_id, minutes, rest, repeat_count, icon = timer
-            image_path = os.path.join(ICON_PATH, icon)
-            if os.path.exists(image_path):
-                image = Image.open(image_path).resize((240, 240)).rotate(90)
+            img_path = os.path.join(ICON_PATH, icon)
+            if os.path.exists(img_path):
+                image = Image.open(img_path).resize((240, 240)).rotate(90)
                 disp.ShowImage(image)
-                logging.info(f"타이머 선택됨: ID={timer_id}")
             else:
                 disp.clear()
-                logging.warning(f"아이콘 없음: {image_path}")
             index = (index + 1) % len(timers)
             selected = True
             time.sleep(0.3)
 
         elif button2.is_pressed:
             disp.clear()
-            logging.info("타이머 선택 취소")
             return
 
         elif selected and button3.is_pressed:
+            if get_minutes_until_next_routine() <= 5:
+                logging.info("Timer start limit when routine time is approaching")
+                disp.clear()
+                return
+
             timer = timers[index - 1]
             timer_id, minutes, rest, repeat_count, icon = timer
-            image_path = os.path.join(ICON_PATH, icon)
-            if os.path.exists(image_path):
-                image = Image.open(image_path).resize((240, 240)).rotate(90)
-                duration_sec = minutes * 60
-                run_timer(timer_id, duration_sec, disp, image)
+            img_path = os.path.join(ICON_PATH, icon)
+            if os.path.exists(img_path):
+                image = Image.open(img_path).resize((240, 240)).rotate(90)
+                run_repeating_timer(timer_id, minutes, rest, repeat_count, disp, image)
                 return
             else:
                 disp.clear()
-                logging.error(f"타이머 아이콘 파일 없음: {image_path}")
                 return
 
 # ------------------ 메인 루프 ------------------ #
@@ -183,19 +282,27 @@ def run_routine_loop():
     disp.clear()
     disp.bl_DutyCycle(50)
 
+    group_started = {}
+
     while True:
         routines = get_today_routines()
         routine_matched = False
 
         for routine in routines:
-            routine_id, start_time, icon, minutes = routine
+            routine_id, start_time, icon, minutes, name, group = routine
+            if group not in group_started:
+                group_started[group] = False
+
             if compare_time(start_time):
-                img_path = os.path.join(ICON_PATH, icon)
-                if os.path.exists(img_path):
-                    img = Image.open(img_path).resize((240, 240)).rotate(90)
-                    if handle_routine(routine_id, minutes, img, disp):
-                        routine_matched = True
-                        break
+                if not group_started[group]:
+                    buzz()
+                    group_started[group] = True
+
+                if handle_routine(routine, disp):
+                    if all_group_routines_completed(group):
+                        buzz()
+                    routine_matched = True
+                    break
 
         if not routine_matched:
             timer_loop(disp)
@@ -206,7 +313,7 @@ if __name__ == "__main__":
     try:
         run_routine_loop()
     except KeyboardInterrupt:
-        logging.info("사용자 종료 요청")
+        logging.info("User exit request")
         disp = LCD_1inch28()
         disp.module_exit()
         sys.exit(0)
