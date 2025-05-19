@@ -63,8 +63,11 @@ def get_today_routines():
         conn.close()
 
 def compare_time(start_time):
-    now = datetime.now().strftime("%H:%M")
-    return now == str(start_time)[:5]
+    now = datetime.now()
+    start_time = datetime.strptime(start_time_str, "%H:%M:%S").replace(
+        year=now.year, month=now.month, day=now.day
+    )
+    return abs((now - start_time).total_seconds()) < 10
 
 def handle_routine(routine, disp):
     routine_id, start_time, icon, minutes, name, group = routine
