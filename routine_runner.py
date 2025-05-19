@@ -296,24 +296,32 @@ def run_routine_loop():
     disp.bl_DutyCycle(50)
 
     while True:
+        print("🔁 while loop repeat...")
         routines = get_today_routines()
-        routine_matched = False
+        print(f"📋 routine num: {len(routines)}")
+
+        executed = False
 
         for routine in routines:
             routine_id, start_time, icon, minutes, name, group = routine
 
+            print(f"⏱ routine {routine_id} time check start")
             if compare_time(start_time):
-                print(f"good routine check: {name}")
+                print(f"✅ 루틴 {routine_id} yes time → handle_routine gogo")
                 img_path = os.path.join(ICON_PATH, icon)
-
                 if os.path.exists(img_path):
                     img = Image.open(img_path).resize((240, 240)).rotate(90)
                     handle_routine(routine_id, minutes, img, disp)
-                    routine_matched = True
-                    break  # ← for 루틴 루프만 빠져나감
+                    executed = True
+                    break
+                else:
+                    print(f"⚠️ 아이콘 파일 없음: {img_path}")
+            else:
+                print(f"⏳ routine {routine_id} no time")
 
-        if not routine_matched:
-            timer_loop(disp)  # 타이머 실행 (버튼1 누르면 LCD에 표시 등)
+        if not executed:
+            print("🕓 not good → go timer")
+            timer_loop(disp)
 
         time.sleep(1)
 
