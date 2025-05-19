@@ -1,9 +1,12 @@
 import json
 import sqlite3
-import bluetooth  # pybluez 필요
+import bluetooth
 import time
+import logging
 
-DB_PATH = "routine_db.db"
+DB_PATH = "/home/pi/routine_db.db"
+
+logging.basicConfig(level=logging.INFO)
 
 def save_to_db(data):
     conn = sqlite3.connect(DB_PATH)
@@ -17,27 +20,23 @@ def save_to_db(data):
             data["id"], data["timer_minutes"], data["rest"],
             data["repeat_count"], data["icon"]
         ))
+        logging.info(f"[BLE] 타이머 저장 완료: ID={data['id']}")
 
     elif data["type"] == "routine":
-        if isinstance(data, list):
-            for routine in data:
-                insert_routine(cursor, routine)
-        else:
-            insert_routine(cursor, data)
+        routines = data if isinstance(data, list) else [data]
+        for r in routines:
+            cursor.execute("""
+                INSERT INTO routines (id, date, start_time, routine_minutes,
+                                      icon, routine_name, group_routine_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                r["id"], r["date"], r["start_time"], r["routine_minutes"],
+                r["icon"], r["routine_name"], r["group_routine_name"]
+            ))
+            logging.info(f"[BLE] 루틴 저장 완료: {r['routine_name']}")
 
     conn.commit()
     conn.close()
-
-def insert_routine(cursor, routine):
-    cursor.execute("""
-        INSERT INTO routines (id, date, start_time, routine_minutes,
-                              icon, routine_name, group_routine_name)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (
-        routine["id"], routine["date"], routine["start_time"],
-        routine["routine_minutes"], routine["icon"],
-        routine["routine_name"], routine["group_routine_name"]
-    ))
 
 def receive_bluetooth_data():
     while True:
@@ -47,28 +46,27 @@ def receive_bluetooth_data():
             server_sock.bind(("", port))
             server_sock.listen(1)
 
-            print("[BLE] connecting...")
+            logging.info("[BLE] 연결 대기 중...")
             client_sock, address = server_sock.accept()
-            print(f"[BLE] connected: {address}")
+            logging.info(f"[BLE] 연결됨: {address}")
 
             data = client_sock.recv(4096).decode('utf-8')
-            print("[BLE] receive data:", data)
+            logging.info(f"[BLE] 수신 데이터: {data}")
 
             json_data = json.loads(data)
+
             if isinstance(json_data, list):
-                for item in json_data:
-                    save_to_db(item)
+                for entry in json_data:
+                    save_to_db(entry)
             else:
                 save_to_db(json_data)
 
         except Exception as e:
-            print("[BLE] error:", e)
+            logging.error(f"[BLE] 오류 발생: {e}")
             time.sleep(1)
-
         finally:
             try:
                 client_sock.close()
                 server_sock.close()
             except:
                 pass
-
