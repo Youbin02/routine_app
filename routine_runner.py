@@ -296,32 +296,32 @@ def run_routine_loop():
     disp.bl_DutyCycle(50)
 
     while True:
-        print("🔁 while loop repeat...")
+        now = datetime.now()
         routines = get_today_routines()
-        print(f"📋 routine num: {len(routines)}")
 
-        executed = False
-
+        # 루틴 실행 조건 검사
         for routine in routines:
             routine_id, start_time, icon, minutes, name, group = routine
 
-            print(f"⏱ routine {routine_id} time check start")
             if compare_time(start_time):
-                print(f"✅ 루틴 {routine_id} yes time → handle_routine gogo")
+                print(f"✅ 루틴 실행 조건 충족 → {name}")
                 img_path = os.path.join(ICON_PATH, icon)
                 if os.path.exists(img_path):
                     img = Image.open(img_path).resize((240, 240)).rotate(90)
                     handle_routine(routine_id, minutes, img, disp)
-                    executed = True
-                    break
                 else:
                     print(f"⚠️ 아이콘 파일 없음: {img_path}")
-            else:
-                print(f"⏳ routine {routine_id} no time")
 
-        if not executed:
-            print("🕓 not good → go timer")
-            timer_loop(disp)
+                # 루틴 실행 중에는 타이머 막기
+                break
+
+        # 루틴 실행 조건이 아니라면 → 타이머 사용 가능
+        else:
+            if get_minutes_until_next_routine() > 5:
+                print("🕓 루틴 임박 아님 → 타이머 모드 허용")
+                timer_loop(disp)
+            else:
+                print("⚠️ 루틴 임박 (5분 이내) → 타이머 사용 금지")
 
         time.sleep(1)
 
