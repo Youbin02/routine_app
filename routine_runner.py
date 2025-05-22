@@ -11,7 +11,7 @@ from threading import Thread
 
 # 경로 설정
 DB_PATH = "/home/pi/LCD_final/routine_db.db"
-ICON_PATH = "/home/pi/LCD_final/APP_icon/"
+ICON_PATH = "/home/pi/APP_icon/"
 
 # GPIO 설정
 button1 = Button(5, pull_up=False, bounce_time=0.05)
