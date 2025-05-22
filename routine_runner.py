@@ -7,6 +7,7 @@ from PIL import Image
 from gpiozero import Button, Buzzer
 from LCD_1inch28 import LCD_1inch28
 from motor_control import run_motor_routine, run_motor_timer
+from ble_sender import send_json_via_ble
 from threading import Thread
 
 # 경로 설정
@@ -182,6 +183,15 @@ def run_routine_loop():
                     img = Image.open(img_path).resize((240, 240)).rotate(90)
                     Thread(target=run_motor_routine, args=(minutes,)).start()
                     handle_routine(routine_id, minutes, img, disp)
+                    group_routines = get_completed_routines_by_group(group)
+                    if all(r[3] in (0, 1) for r in group_routines):  # 모든 루틴이 완료/실패 처리된 경우
+                        routine_list = [
+                            {"id": r[0], "start_time": r[1], "minutes": r[2],
+                             "completed": r[3], "name": r[4]}
+                            for r in group_routines
+                        ]
+                        data = {"group": group, "routines": routine_list}
+                        send_json_via_ble(data)
                     break
                 else:
                     logging.warning(f"Icon file not found: {img_path}")
