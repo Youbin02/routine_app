@@ -4,7 +4,7 @@ import bluetooth
 import time
 import logging
 
-DB_PATH = "/home/pi/routine_db.db"
+DB_PATH = "/home/pi/LCD_final/routine_db.db"
 
 logging.basicConfig(level=logging.INFO)
 
