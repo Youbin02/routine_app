@@ -50,7 +50,8 @@ def get_completed_routines_by_group(group_name):
     conn = connect_db()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT id, start_time, routine_minutes, completed, routine_name
+        SELECT id, date, start_time, routine_minutes, icon,
+               completed, routine_name, group_routine_name
         FROM routines
         WHERE date = ? AND group_routine_name = ?
     """, (today, group_name))
@@ -197,10 +198,18 @@ def run_routine_loop():
                     Thread(target=run_motor_routine, args=(minutes,)).start()
                     handle_routine(routine_id, minutes, img, disp)
                     group_routines = get_completed_routines_by_group(group)
-                    if all(r[3] in (0, 1) for r in group_routines):  # 모든 루틴이 완료/실패 처리된 경우
+                    if all(r[5] in (0, 1) for r in group_routines):  # r[5]는 completed
                         routine_list = [
-                            {"id": r[0], "start_time": r[1], "minutes": r[2],
-                             "completed": r[3], "name": r[4]}
+                            {
+                                "id": r[0],
+                                "date": r[1],
+                                "start_time": r[2],
+                                "routine_minutes": r[3],
+                                "icon": r[4],
+                                "completed": r[5],
+                                "routine_name": r[6],
+                                "group_routine_name": r[7]
+                            }
                             for r in group_routines
                         ]
                         data = {"group": group, "routines": routine_list}
