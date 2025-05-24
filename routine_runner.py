@@ -217,8 +217,11 @@ def run_routine_loop():
     disp.clear()
     disp.bl_DutyCycle(50)
     logging.info("Routine runner loop started")
+
     while True:
         routines = get_today_routines()
+        executed = False  # 루틴 하나라도 실행했는지 여부 추적
+
         for routine in routines:
             routine_id, start_time, icon, minutes, name, group = routine
             if compare_time(start_time):
@@ -228,13 +231,14 @@ def run_routine_loop():
                     img = Image.open(img_path).resize((240, 240)).rotate(90)
                     Thread(target=run_motor_routine, args=(minutes,)).start()
                     handle_routine(routine_id, minutes, img, disp)
-                    break
-                else:
-                    logging.warning(f"Icon file not found: {img_path}")
-        else:
-            if get_minutes_until_next_routine() > 5:
-                logging.info("Entering timer loop")
-                timer_loop(disp)
+                    executed = True
+                    break  # 루틴 하나 실행 후 다음 while 루프로
+
+        # 루틴을 실행하지 않았고, 다음 루틴까지 여유 있으면 타이머 실행
+        if not executed and get_minutes_until_next_routine() > 5:
+            logging.info("Entering timer loop")
+            timer_loop(disp)
+
         time.sleep(1)
 
 if __name__ == "__main__":
