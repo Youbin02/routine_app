@@ -95,21 +95,52 @@ def handle_routine(routine_id, minutes, image, disp):
     disp.ShowImage(image)
     buzz()
     start = time.time()
+
+    result = None
+
     while time.time() - start < duration:
         if button1.is_pressed:
             logging.info(f"Routine {routine_id} marked as completed by button1")
             update_routine_status(routine_id, 1)
-            disp.clear()
-            return
+            result = 1
+            break
         elif button2.is_pressed:
             logging.info(f"Routine {routine_id} marked as failed by button2")
             update_routine_status(routine_id, 0)
-            disp.clear()
-            return
+            result = 0
+            break
         time.sleep(0.1)
-    logging.info(f"Routine {routine_id} failed due to timeout")
-    update_routine_status(routine_id, 0)
+    else:
+        logging.info(f"Routine {routine_id} failed due to timeout")
+        update_routine_status(routine_id, 0)
+        result = 0
+
     disp.clear()
+
+    # ✔ 루틴 정보 조회 및 BLE 송신
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, date, start_time, routine_minutes, icon,
+               completed, routine_name, group_routine_name
+        FROM routines
+        WHERE id = ?
+    """, (routine_id,))
+    r = cursor.fetchone()
+    conn.close()
+
+    if r:
+        routine_data = {
+            "id": r[0],
+            "date": r[1],
+            "start_time": r[2],
+            "routine_minutes": r[3],
+            "icon": r[4],
+            "completed": r[5],
+            "routine_name": r[6],
+            "group_routine_name": r[7]
+        }
+        send_json_via_ble({"type": "routine_update", "routine": routine_data})
 
 def get_timer_data():
     conn = connect_db()
@@ -197,23 +228,6 @@ def run_routine_loop():
                     img = Image.open(img_path).resize((240, 240)).rotate(90)
                     Thread(target=run_motor_routine, args=(minutes,)).start()
                     handle_routine(routine_id, minutes, img, disp)
-                    group_routines = get_completed_routines_by_group(group)
-                    if all(r[5] in (0, 1) for r in group_routines):  # r[5]는 completed
-                        routine_list = [
-                            {
-                                "id": r[0],
-                                "date": r[1],
-                                "start_time": r[2],
-                                "routine_minutes": r[3],
-                                "icon": r[4],
-                                "completed": r[5],
-                                "routine_name": r[6],
-                                "group_routine_name": r[7]
-                            }
-                            for r in group_routines
-                        ]
-                        data = {"group": group, "routines": routine_list}
-                        send_json_via_ble(data)
                     break
                 else:
                     logging.warning(f"Icon file not found: {img_path}")
