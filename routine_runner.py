@@ -124,21 +124,31 @@ def run_routine_runner():
     disp.Init()
     disp.clear()
     disp.bl_DutyCycle(50)
-    logging.info("[🔁] routine start")
+    logging.info("[🔁] 루틴 실행기 시작됨")
 
     while True:
         try:
             data = incoming_queue.get(timeout=1)
 
-            save_to_db(data)
+            # 루틴 리스트 처리
+            if isinstance(data, list):
+                for item in data:
+                    if item.get("type") == "routine":
+                        save_to_db(item)
+                        handle_routine(item, disp)
+                    elif item.get("type") == "timer":
+                        save_to_db(item)
+                        run_repeating_timer(item, disp)
 
-            if data["type"] == "routine":
-                routines = data if isinstance(data, list) else [data]
-                for r in routines:
-                    handle_routine(r, disp)
-            elif data["type"] == "timer":
-                run_repeating_timer(data, disp)
+            # 단일 JSON 처리
+            elif isinstance(data, dict):
+                if data.get("type") == "routine":
+                    save_to_db(data)
+                    handle_routine(data, disp)
+                elif data.get("type") == "timer":
+                    save_to_db(data)
+                    run_repeating_timer(data, disp)
 
         except Exception as e:
-            logging.error(f"[❌] queue processing error: {e}")
+            logging.error(f"[❌] queue error: {e}")
             continue
