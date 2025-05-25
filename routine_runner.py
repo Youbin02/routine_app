@@ -94,7 +94,7 @@ def run_routine_runner():
     disp.Init()
     disp.clear()
     disp.bl_DutyCycle(50)
-    logging.info("[🔁] routine start")
+    logging.info("[🔁] 루틴 실행기 시작됨")
 
     while True:
         try:
