@@ -11,6 +11,3 @@ if __name__ == "__main__":
 
     p1.join()
     p2.join()
-
-    except KeyboardInterrupt:
-        logging.info("[MAIN] Manual shutdown requested")
