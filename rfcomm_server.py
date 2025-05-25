@@ -1,73 +1,89 @@
 import bluetooth
 import json
-import threading
-import queue
+import sqlite3
 import time
+import logging
 
-incoming_queue = queue.Queue()
+DB_PATH = "/home/pi/LCD_final/routine_db.db"
 
-def handle_client(client_sock):
-    buffer = ""
-    try:
-        while True:
-            data = client_sock.recv(1024).decode()
-            if not data:
-                break
-            buffer += data
-            while '\n' in buffer:
-                line, buffer = buffer.split('\n', 1)
-                line = line.strip()
-                if not line:
-                    continue
-                print(f"[📥] receive data: {line}")
-                try:
-                    message = json.loads(line)
-                    print(f"[🔍] parsing JSON: {message}")
+logging.basicConfig(level=logging.INFO)
 
-                    # 리스트인 경우 항목별로 분해하여 큐에 저장
-                    if isinstance(message, list):
-                        for item in message:
-                            if isinstance(item, dict):
-                                incoming_queue.put(item)
-                    elif isinstance(message, dict):
-                        incoming_queue.put(message)
+def save_to_db(data):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
 
-                    # 응답 전송
-                    response = {"ack": True, "received_type": "batch" if isinstance(message, list) else message.get("type")}
-                    client_sock.send((json.dumps(response) + '\n').encode())
-                    print(f"[📤] message send")
-                except json.JSONDecodeError:
-                    print("[⚠️] JSON parsing failed")
-    except Exception as e:
-        print(f"[❌] Error processing client: {e}")
-    finally:
-        client_sock.close()
-        print("[🔌] client connect finish")
+    if data["type"] == "timer":
+        cursor.execute("""
+            INSERT INTO timers (id, timer_minutes, rest, repeat_count, icon)
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            data["id"], data["timer_minutes"], data["rest"],
+            data["repeat_count"], data["icon"]
+        ))
+        logging.info(f"[BLE] timer save: ID={data['id']}")
 
-def start_server():
-    server_sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
-    server_sock.bind(("", bluetooth.PORT_ANY))
-    server_sock.listen(1)
-    port = server_sock.getsockname()[1]
+    elif data["type"] == "routine":
+        routines = data if isinstance(data, list) else [data]
+        for r in routines:
+            cursor.execute("""
+                INSERT INTO routines (id, date, start_time, routine_minutes,
+                                      icon, routine_name, group_routine_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                r["id"], r["date"], r["start_time"], r["routine_minutes"],
+                r["icon"], r["routine_name"], r["group_routine_name"]
+            ))
+            logging.info(f"[BLE] routine save: {r['routine_name']}")
 
-    bluetooth.advertise_service(
-        server_sock,
-        "RoutineAppServer",
-        service_classes=[bluetooth.SERIAL_PORT_CLASS],
-        profiles=[bluetooth.SERIAL_PORT_PROFILE]
-    )
+    conn.commit()
+    conn.close()
 
-    print(f"[🟢] RFCOMM Bluetooth serer running... port: {port}")
+def start_rfcomm_server():
+    while True:
+        try:
+            server_sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
+            port = 1
+            server_sock.bind(("", port))
+            server_sock.listen(1)
 
-    try:
-        while True:
-            client_sock, client_info = server_sock.accept()
-            print(f"[✅] connected: {client_info}")
-            threading.Thread(target=handle_client, args=(client_sock,)).start()
-    except KeyboardInterrupt:
-        print("[🛑] server stop")
-    finally:
-        server_sock.close()
+            logging.info("[🔌] RFCOMM Bluetooth connect wait...")
+            client_sock, address = server_sock.accept()
+            logging.info(f"[✅] connected: {address}")
+
+            buffer = ""
+            while True:
+                data = client_sock.recv(4096).decode('utf-8')
+                if not data:
+                    break
+                buffer += data
+
+                while '\n' in buffer:
+                    line, buffer = buffer.split('\n', 1)
+                    line = line.strip()
+                    if not line:
+                        continue
+
+                    logging.info(f"[📥] send data: {line}")
+                    try:
+                        json_data = json.loads(line)
+                        if isinstance(json_data, list):
+                            for entry in json_data:
+                                save_to_db(entry)
+                        else:
+                            save_to_db(json_data)
+                        ack = json.dumps({"ack": True}) + '\n'
+                        client_sock.send(ack.encode())
+                    except Exception as e:
+                        logging.error(f"[❌] JSON error: {e}")
+        except Exception as e:
+            logging.error(f"[❌] connect or receive error: {e}")
+            time.sleep(1)
+        finally:
+            try:
+                client_sock.close()
+                server_sock.close()
+            except:
+                pass
 
 if __name__ == "__main__":
-    start_server()
+    start_rfcomm_server()
