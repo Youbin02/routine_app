@@ -4,6 +4,7 @@ import sqlite3
 import time
 import logging
 
+client_socket_global = None
 DB_PATH = "/home/pi/LCD_final/routine_db.db"
 
 logging.basicConfig(level=logging.INFO)
@@ -39,6 +40,7 @@ def save_to_db(data):
     conn.close()
 
 def start_rfcomm_server():
+    global client_socket_global
     while True:
         try:
             server_sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
@@ -84,6 +86,18 @@ def start_rfcomm_server():
                 server_sock.close()
             except:
                 pass
+
+def send_json_to_app(data_dict):
+    global client_socket_global
+    if client_socket_global:
+        try:
+            json_str = json.dumps(data_dict) + '\n'
+            client_socket_global.send(json_str.encode())
+            logging.info(f"[📤] sent to app: {json_str.strip()}")
+        except Exception as e:
+            logging.error(f"[❌] sending error: {e}")
+    else:
+        logging.warning("[⚠️] no client connected to send data")
 
 if __name__ == "__main__":
     start_rfcomm_server()
