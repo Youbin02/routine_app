@@ -220,26 +220,33 @@ def run_routine_loop():
     logging.info("Routine runner loop started")
 
     while True:
-        routines = get_today_routines()
-        executed = False
+        try:
+            routines = get_today_routines()
+            logging.info(f"[🔄] loop repeat: routine {len(routines)}개")
 
-        for routine in routines:
-            routine_id, start_time, icon, minutes, name, group = routine
-            if compare_time(start_time):
-                logging.info(f"Routine {routine_id} is due to start")
-                img_path = os.path.join(ICON_PATH, icon)
-                if os.path.exists(img_path):
-                    img = Image.open(img_path).resize((240, 240)).rotate(90)
-                    Thread(target=run_motor_routine, args=(minutes,)).start()
-                    handle_routine(routine_id, minutes, img, disp)
-                    executed = True
-                    break
+            executed = False
 
-        if not executed and get_minutes_until_next_routine() > 5:
-            logging.info("Entering timer loop")
-            timer_loop(disp)
+            for routine in routines:
+                routine_id, start_time, icon, minutes, name, group = routine
+                if compare_time(start_time):
+                    logging.info(f"Routine {routine_id} is due to start")
+                    img_path = os.path.join(ICON_PATH, icon)
+                    if os.path.exists(img_path):
+                        img = Image.open(img_path).resize((240, 240)).rotate(90)
+                        Thread(target=run_motor_routine, args=(minutes,)).start()
+                        handle_routine(routine_id, minutes, img, disp)
+                        executed = True
+                        break  # 루틴 하나 실행 후 루프 재시작
 
-        time.sleep(1)
+            # 루틴이 없으면 타이머 진입
+            if not executed and get_minutes_until_next_routine() > 5:
+                logging.info("Entering timer loop")
+                timer_loop(disp)
+
+            time.sleep(1)
+
+        except Exception as e:
+            logging.error(f"[❌] loop error: {e}")
 
 if __name__ == "__main__":
     try:
