@@ -120,6 +120,7 @@ def run_repeating_timer(timer_data, disp):
         time.sleep(timer_data['rest'] * 60)
 
 def run_routine_runner():
+    logging.info("[🛠️] run_routine_runner() started — before LCD reset")
     disp = LCD_1inch28()
     disp.Init()
     disp.clear()
