@@ -129,6 +129,7 @@ def run_routine_runner():
     while True:
         try:
             data = incoming_queue.get(timeout=1)
+            logging.info(f"[📦] queue data type: {type(data)}, contents: {data}")
 
             # 루틴 리스트 처리
             if isinstance(data, list):
