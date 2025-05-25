@@ -117,7 +117,7 @@ def handle_routine(routine_id, minutes, image, disp):
 
     disp.clear()
 
-    # ✔ 루틴 정보 조회 및 결과 regardless of completion
+    # ✔ 루틴 정보 조회 및 BLE 송신
     conn = connect_db()
     cursor = conn.cursor()
     cursor.execute("""
@@ -140,18 +140,8 @@ def handle_routine(routine_id, minutes, image, disp):
             "routine_name": r[6],
             "group_routine_name": r[7]
         }
-        message = {
-            "type": "routine_update",
-            "routine": routine_data
-        }
-        # JSON 파일로 기록하여 rfcomm_server가 주기적으로 전송하게 함
-        try:
-            with open("/tmp/routine_outbox.json", "w") as f:
-                import json
-                f.write(json.dumps(message) + "\n")
-            logging.info("[📤] routine complete JSON made ok")
-        except Exception as e:
-            logging.error(f"[❌] JSON save failed: {e}")
+        logging.info("Sending BLE update...")
+        send_json_via_ble({"type": "routine_update", "routine": routine_data})
 
 def get_timer_data():
     conn = connect_db()
