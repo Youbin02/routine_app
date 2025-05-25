@@ -50,6 +50,7 @@ def start_rfcomm_server():
 
             logging.info("[🔌] RFCOMM Bluetooth connect wait...")
             client_sock, address = server_sock.accept()
+            client_socket_global = client_sock
             logging.info(f"[✅] connected: {address}")
 
             buffer = ""
