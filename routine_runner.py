@@ -38,48 +38,35 @@ def update_routine_status(routine_id, status):
     conn.commit()
     conn.close()
 
-def save_routine_to_db(data):
-    try:
-        conn = connect_db()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT OR REPLACE INTO routines (id, date, start_time, routine_minutes, icon, completed, routine_name, group_routine_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            data["id"],
-            data["date"],
-            data["start_time"],
-            data["routine_minutes"],
-            data["icon"],
-            data.get("completed", 0),
-            data["routine_name"],
-            data["group_routine_name"]
-        ))
-        conn.commit()
-        conn.close()
-        logging.info(f"[💾] 루틴 저장 완료: {data['routine_name']}")
-    except Exception as e:
-        logging.error(f"[❌] 루틴 저장 실패: {e}")
+def save_to_db(data):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
 
-def save_timer_to_db(data):
-    try:
-        conn = connect_db()
-        cursor = conn.cursor()
+    if data["type"] == "timer":
         cursor.execute("""
-            INSERT OR REPLACE INTO timers (id, timer_minutes, rest, repeat_count, icon)
+            INSERT INTO timers (id, timer_minutes, rest, repeat_count, icon)
             VALUES (?, ?, ?, ?, ?)
         """, (
-            data["id"],
-            data["timer_minutes"],
-            data["rest"],
-            data["repeat_count"],
-            data["icon"]
+            data["id"], data["timer_minutes"], data["rest"],
+            data["repeat_count"], data["icon"]
         ))
-        conn.commit()
-        conn.close()
-        logging.info(f"[💾] 타이머 저장 완료: {data['id']}")
-    except Exception as e:
-        logging.error(f"[❌] 타이머 저장 실패: {e}")
+        logging.info(f"[BLE] timer save complete: ID={data['id']}")
+
+    elif data["type"] == "routine":
+        routines = data if isinstance(data, list) else [data]
+        for r in routines:
+            cursor.execute("""
+                INSERT INTO routines (id, date, start_time, routine_minutes,
+                                      icon, routine_name, group_routine_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                r["id"], r["date"], r["start_time"], r["routine_minutes"],
+                r["icon"], r["routine_name"], r["group_routine_name"]
+            ))
+            logging.info(f"[BLE] routine save complete: {r['routine_name']}")
+
+    conn.commit()
+    conn.close()
 
 def handle_routine(r, disp):
     logging.info(f"Starting routine {r['id']} for {r['routine_minutes']} minute(s)")
@@ -137,17 +124,21 @@ def run_routine_runner():
     disp.Init()
     disp.clear()
     disp.bl_DutyCycle(50)
-    logging.info("[🔁] 루틴 실행기 시작됨")
+    logging.info("[🔁] routine start")
 
     while True:
         try:
             data = incoming_queue.get(timeout=1)
-            if data['type'] == 'routine':
-                save_routine_to_db(data)
-                handle_routine(data, disp)
-            elif data['type'] == 'timer':
-                save_timer_to_db(data)
+
+            save_to_db(data)
+
+            if data["type"] == "routine":
+                routines = data if isinstance(data, list) else [data]
+                for r in routines:
+                    handle_routine(r, disp)
+            elif data["type"] == "timer":
                 run_repeating_timer(data, disp)
+
         except Exception as e:
-            logging.error(f"[❌] 큐 처리 오류: {e}")
+            logging.error(f"[❌] queue processing error: {e}")
             continue
