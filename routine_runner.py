@@ -7,11 +7,14 @@ from PIL import Image
 from gpiozero import Button, Buzzer
 from LCD_1inch28 import LCD_1inch28
 from motor_control import run_motor_routine, run_motor_timer
-from rfcomm_server import incoming_queue
+from ble_sender import send_json_via_ble
+from threading import Thread
 
+# 경로 설정
 DB_PATH = "/home/pi/LCD_final/routine_db.db"
 ICON_PATH = "/home/pi/APP_icon/"
 
+# GPIO 설정
 button1 = Button(5, pull_up=False, bounce_time=0.05)
 button2 = Button(6, pull_up=False, bounce_time=0.05)
 button3 = Button(26, pull_up=False, bounce_time=0.05)
@@ -28,6 +31,34 @@ def buzz(duration=1):
 def connect_db():
     return sqlite3.connect(DB_PATH)
 
+def get_today_routines():
+    today = datetime.now().strftime("%Y-%m-%d")
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, start_time, icon, routine_minutes, routine_name, group_routine_name
+        FROM routines
+        WHERE date = ? AND completed = 0
+    """, (today,))
+    routines = cursor.fetchall()
+    conn.close()
+    logging.info(f"Fetched {len(routines)} routines for today")
+    return routines
+
+def get_completed_routines_by_group(group_name):
+    today = datetime.now().strftime("%Y-%m-%d")
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, date, start_time, routine_minutes, icon,
+               completed, routine_name, group_routine_name
+        FROM routines
+        WHERE date = ? AND group_routine_name = ?
+    """, (today, group_name))
+    routines = cursor.fetchall()
+    conn.close()
+    return routines
+
 def update_routine_status(routine_id, status):
     logging.info(f"Updating routine {routine_id} status to {status}")
     conn = connect_db()
@@ -36,121 +67,185 @@ def update_routine_status(routine_id, status):
     conn.commit()
     conn.close()
 
-def save_to_db(data):
-    try:
-        conn = connect_db()
-        cursor = conn.cursor()
+def compare_time(start_time_str):
+    now = datetime.now()
+    start_time = datetime.strptime(start_time_str, "%H:%M:%S").replace(
+        year=now.year, month=now.month, day=now.day
+    )
+    logging.info(f"Comparing now: {now.strftime('%H:%M:%S')} with start_time: {start_time.strftime('%H:%M:%S')}")
+    return now >= start_time
 
-        if data["type"] == "timer":
-            cursor.execute("""
-                INSERT INTO timers (id, timer_minutes, rest, repeat_count, icon)
-                VALUES (?, ?, ?, ?, ?)
-            """, (
-                data["id"], data["timer_minutes"], data["rest"],
-                data["repeat_count"], data["icon"]
-            ))
-            logging.info(f"[BLE] timer saved: ID={data['id']}")
+def get_minutes_until_next_routine():
+    routines = get_today_routines()
+    now = datetime.now()
+    times = []
+    for _, start_time, *_ in routines:
+        st = datetime.strptime(start_time, "%H:%M:%S").time()
+        dt = datetime.combine(now.date(), st)
+        delta = (dt - now).total_seconds() / 60
+        if delta > 0:
+            times.append(delta)
+    remaining = min(times) if times else float('inf')
+    logging.info(f"Minutes until next routine: {remaining}")
+    return remaining
 
-        elif data["type"] == "routine":
-            cursor.execute("""
-                INSERT INTO routines (id, date, start_time, routine_minutes,
-                                      icon, routine_name, group_routine_name)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                data["id"], data["date"], data["start_time"], data["routine_minutes"],
-                data["icon"], data["routine_name"], data["group_routine_name"]
-            ))
-            logging.info(f"[BLE] routine saved: {data['routine_name']}")
-
-        conn.commit()
-        conn.close()
-
-    except Exception as e:
-        logging.error(f"[❌] DB save failed: {e}")
-
-def handle_routine(r, disp):
-    logging.info(f"Starting routine {r['id']} for {r['routine_minutes']} minute(s)")
-    duration = r['routine_minutes'] * 60
-    image_path = os.path.join(ICON_PATH, r['icon'])
-    image = Image.open(image_path).resize((240, 240)).rotate(90)
+def handle_routine(routine_id, minutes, image, disp):
+    logging.info(f"Starting routine {routine_id} for {minutes} minute(s)")
+    duration = minutes * 60
     disp.ShowImage(image)
     buzz()
     start = time.time()
 
+    result = None
+
     while time.time() - start < duration:
         if button1.is_pressed:
-            logging.info(f"Routine {r['id']} marked as completed by button1")
-            update_routine_status(r['id'], 1)
+            logging.info(f"Routine {routine_id} marked as completed by button1")
+            update_routine_status(routine_id, 1)
+            result = 1
             break
         elif button2.is_pressed:
-            logging.info(f"Routine {r['id']} marked as failed by button2")
-            update_routine_status(r['id'], 0)
+            logging.info(f"Routine {routine_id} marked as failed by button2")
+            update_routine_status(routine_id, 0)
+            result = 0
             break
         time.sleep(0.1)
     else:
-        logging.info(f"Routine {r['id']} failed due to timeout")
-        update_routine_status(r['id'], 0)
+        logging.info(f"Routine {routine_id} failed due to timeout")
+        update_routine_status(routine_id, 0)
+        result = 0
 
     disp.clear()
+
+    # ✔ 루틴 정보 조회 및 BLE 송신
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, date, start_time, routine_minutes, icon,
+               completed, routine_name, group_routine_name
+        FROM routines
+        WHERE id = ?
+    """, (routine_id,))
+    r = cursor.fetchone()
+    conn.close()
+
+    if r:
+        routine_data = {
+            "id": r[0],
+            "date": r[1],
+            "start_time": r[2],
+            "routine_minutes": r[3],
+            "icon": r[4],
+            "completed": r[5],
+            "routine_name": r[6],
+            "group_routine_name": r[7]
+        }
+        logging.info("Sending BLE update...")
+        send_json_via_ble({"type": "routine_update", "routine": routine_data})
+
+def get_timer_data():
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, timer_minutes, rest, repeat_count, icon FROM timers
+    """)
+    timers = cursor.fetchall()
+    conn.close()
+    logging.info(f"Fetched {len(timers)} timers")
+    return timers
 
 def run_timer(timer_id, sec, disp, image):
     logging.info(f"Running timer {timer_id} for {sec} seconds")
     while button3.is_pressed:
         time.sleep(0.1)
     disp.ShowImage(image.rotate(180))
-    for _ in range(sec // 60):
+    steps = sec // 60
+    for i in range(steps):
         time.sleep(60)
+        minutes_left = get_minutes_until_next_routine()
+        if minutes_left <= 5:
+            logging.info("Timer stopped due to routine within 5 minutes")
+            break
     disp.clear()
     logging.info("Timer finished")
 
-def run_repeating_timer(timer_data, disp):
-    logging.info(f"Running repeating timer {timer_data['id']} for {timer_data['repeat_count']} sets")
-    run_motor_timer(timer_data['timer_minutes'], timer_data['rest'], timer_data['repeat_count'])
-    image_path = os.path.join(ICON_PATH, timer_data['icon'])
-    image = Image.open(image_path).resize((240, 240)).rotate(90)
-    for i in range(timer_data['repeat_count']):
+def run_repeating_timer(timer_id, minutes, rest, count, disp, image):
+    logging.info(f"Running repeating timer {timer_id} for {count} sets of {minutes} minutes work and {rest} minutes rest")
+    run_motor_timer(minutes, rest, count)
+    for i in range(count):
         logging.info(f"Round {i+1} - Work")
-        run_timer(timer_data['id'], timer_data['timer_minutes'] * 60, disp, image)
-        logging.info(f"Round {i+1} - Rest")
-        time.sleep(timer_data['rest'] * 60)
+        run_timer(timer_id, minutes * 60, disp, image)
+        logging.info(f"Round {i+1} - Rest for {rest} minutes")
+        time.sleep(rest * 60)
 
-def run_routine_runner():
+def timer_loop(disp):
+    if get_minutes_until_next_routine() <= 5:
+        logging.info("Timer blocked due to upcoming routine")
+        return
+    timers = get_timer_data()
+    if not timers:
+        return
+    index = 0
+    selected = False
+    while True:
+        if button1.is_pressed:
+            timer = timers[index]
+            timer_id, minutes, rest, repeat_count, icon = timer
+            image_path = os.path.join(ICON_PATH, icon)
+            if os.path.exists(image_path):
+                image = Image.open(image_path).resize((240, 240)).rotate(90)
+                disp.ShowImage(image)
+                logging.info(f"Selected timer {timer_id}")
+            index = (index + 1) % len(timers)
+            selected = True
+            time.sleep(0.3)
+        elif button2.is_pressed:
+            disp.clear()
+            logging.info("Timer selection cancelled")
+            return
+        elif selected and button3.is_pressed:
+            timer = timers[index - 1]
+            timer_id, minutes, rest, repeat_count, icon = timer
+            image_path = os.path.join(ICON_PATH, icon)
+            if os.path.exists(image_path):
+                image = Image.open(image_path).resize((240, 240)).rotate(90)
+                run_repeating_timer(timer_id, minutes, rest, repeat_count, disp, image)
+                return
+
+def run_routine_loop():
+    disp = LCD_1inch28()
+    disp.Init()
+    disp.clear()
+    disp.bl_DutyCycle(50)
+    logging.info("Routine runner loop started")
+
+    while True:
+        routines = get_today_routines()
+        executed = False
+
+        for routine in routines:
+            routine_id, start_time, icon, minutes, name, group = routine
+            if compare_time(start_time):
+                logging.info(f"Routine {routine_id} is due to start")
+                img_path = os.path.join(ICON_PATH, icon)
+                if os.path.exists(img_path):
+                    img = Image.open(img_path).resize((240, 240)).rotate(90)
+                    Thread(target=run_motor_routine, args=(minutes,)).start()
+                    handle_routine(routine_id, minutes, img, disp)
+                    executed = True
+                    break
+
+        if not executed and get_minutes_until_next_routine() > 5:
+            logging.info("Entering timer loop")
+            timer_loop(disp)
+
+        time.sleep(1)
+
+if __name__ == "__main__":
     try:
-        logging.info("[🛠️] run_routine_runner() enter")
+        run_routine_loop()
+    except KeyboardInterrupt:
+        logging.info("Routine runner interrupted by user")
         disp = LCD_1inch28()
-        disp.Init()
-        disp.clear()
-        disp.bl_DutyCycle(50)
-        logging.info("[🔁] routine start")
-
-        while True:
-            try:
-                data = incoming_queue.get(timeout=1)
-                logging.info(f"[📦] recv data type: {type(data)} / contents: {repr(data)}")
-
-                if isinstance(data, list):
-                    for item in data:
-                        if not isinstance(item, dict):
-                            logging.warning(f"[⚠️] ignored list: {repr(item)}")
-                            continue
-                        save_to_db(item)
-                        if item.get("type") == "routine":
-                            handle_routine(item, disp)
-                        elif item.get("type") == "timer":
-                            run_repeating_timer(item, disp)
-
-                elif isinstance(data, dict):
-                    save_to_db(data)
-                    if data.get("type") == "routine":
-                        handle_routine(data, disp)
-                    elif data.get("type") == "timer":
-                        run_repeating_timer(data, disp)
-
-                else:
-                    logging.warning(f"[⚠️] data handling: {type(data)} / {repr(data)}")
-
-            except Exception as e:
-                logging.error(f"[❌] queue error: {type(e).__name__} - {e}")
-
-    except Exception as outer:
-        logging.critical(f"[💥] critical exception: {type(outer).__name__} - {outer}")
+        disp.module_exit()
+        os._exit(0)
