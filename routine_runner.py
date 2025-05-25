@@ -140,6 +140,7 @@ def handle_routine(routine_id, minutes, image, disp):
             "routine_name": r[6],
             "group_routine_name": r[7]
         }
+        logging.info("Sending BLE update...")
         send_json_via_ble({"type": "routine_update", "routine": routine_data})
 
 def get_timer_data():
