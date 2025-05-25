@@ -9,6 +9,7 @@ DB_PATH = "/home/pi/LCD_final/routine_db.db"
 
 logging.basicConfig(level=logging.INFO)
 
+
 def save_to_db(data):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -39,6 +40,7 @@ def save_to_db(data):
     conn.commit()
     conn.close()
 
+
 def start_rfcomm_server():
     global client_socket_global
     while True:
@@ -48,57 +50,75 @@ def start_rfcomm_server():
             server_sock.bind(("", port))
             server_sock.listen(1)
 
-            logging.info("[🔌] RFCOMM Bluetooth connect wait...")
+            logging.info("[🔌] RFCOMM Bluetooth waiting for connection...")
             client_sock, address = server_sock.accept()
             client_socket_global = client_sock
-            logging.info(f"[✅] connected: {address}")
+            logging.info(f"[✅] Connected from: {address}")
 
             buffer = ""
             while True:
-                data = client_sock.recv(4096).decode('utf-8')
-                if not data:
+                try:
+                    data = client_sock.recv(4096).decode('utf-8')
+                    if not data:
+                        logging.warning("[⚠️] No data received, closing socket.")
+                        break
+
+                    buffer += data
+                    while '\n' in buffer:
+                        line, buffer = buffer.split('\n', 1)
+                        line = line.strip()
+                        if not line:
+                            continue
+
+                        logging.info(f"[📥] Received: {line}")
+                        try:
+                            json_data = json.loads(line)
+                            if isinstance(json_data, list):
+                                for entry in json_data:
+                                    save_to_db(entry)
+                            else:
+                                save_to_db(json_data)
+
+                            ack = json.dumps({"ack": True}) + '\n'
+                            client_sock.send(ack.encode())
+                        except Exception as e:
+                            logging.error(f"[❌] JSON parse error: {e}")
+                except Exception as e:
+                    logging.warning(f"[🔌] Disconnected: {e}")
                     break
-                buffer += data
 
-                while '\n' in buffer:
-                    line, buffer = buffer.split('\n', 1)
-                    line = line.strip()
-                    if not line:
-                        continue
-
-                    logging.info(f"[📥] send data: {line}")
-                    try:
-                        json_data = json.loads(line)
-                        if isinstance(json_data, list):
-                            for entry in json_data:
-                                save_to_db(entry)
-                        else:
-                            save_to_db(json_data)
-                        ack = json.dumps({"ack": True}) + '\n'
-                        client_sock.send(ack.encode())
-                    except Exception as e:
-                        logging.error(f"[❌] JSON error: {e}")
         except Exception as e:
-            logging.error(f"[❌] connect or receive error: {e}")
+            logging.error(f"[❌] Bluetooth server error: {e}")
             time.sleep(1)
+
         finally:
+            if client_socket_global:
+                try:
+                    client_socket_global.close()
+                except:
+                    pass
+                client_socket_global = None
             try:
-                client_sock.close()
                 server_sock.close()
             except:
                 pass
+            logging.warning("[🛑] Sockets closed, restarting server loop...")
+
 
 def send_json_to_app(data_dict):
     global client_socket_global
+    logging.info(f"[🧪] Trying to send: {data_dict}")
+
     if client_socket_global:
         try:
             json_str = json.dumps(data_dict) + '\n'
             client_socket_global.send(json_str.encode())
-            logging.info(f"[📤] sent to app: {json_str.strip()}")
+            logging.info(f"[📤] Sent to app: {json_str.strip()}")
         except Exception as e:
-            logging.error(f"[❌] sending error: {e}")
+            logging.error(f"[❌] Sending error: {e}")
     else:
-        logging.warning("[⚠️] no client connected to send data")
+        logging.warning("[⚠️] No client connected to send data")
+
 
 if __name__ == "__main__":
     start_rfcomm_server()
