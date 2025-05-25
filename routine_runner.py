@@ -38,6 +38,49 @@ def update_routine_status(routine_id, status):
     conn.commit()
     conn.close()
 
+def save_routine_to_db(data):
+    try:
+        conn = connect_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO routines (id, date, start_time, routine_minutes, icon, completed, routine_name, group_routine_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            data["id"],
+            data["date"],
+            data["start_time"],
+            data["routine_minutes"],
+            data["icon"],
+            data.get("completed", 0),
+            data["routine_name"],
+            data["group_routine_name"]
+        ))
+        conn.commit()
+        conn.close()
+        logging.info(f"[💾] 루틴 저장 완료: {data['routine_name']}")
+    except Exception as e:
+        logging.error(f"[❌] 루틴 저장 실패: {e}")
+
+def save_timer_to_db(data):
+    try:
+        conn = connect_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO timers (id, timer_minutes, rest, repeat_count, icon)
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            data["id"],
+            data["timer_minutes"],
+            data["rest"],
+            data["repeat_count"],
+            data["icon"]
+        ))
+        conn.commit()
+        conn.close()
+        logging.info(f"[💾] 타이머 저장 완료: {data['id']}")
+    except Exception as e:
+        logging.error(f"[❌] 타이머 저장 실패: {e}")
+
 def handle_routine(r, disp):
     logging.info(f"Starting routine {r['id']} for {r['routine_minutes']} minute(s)")
     duration = r['routine_minutes'] * 60
@@ -100,8 +143,11 @@ def run_routine_runner():
         try:
             data = incoming_queue.get(timeout=1)
             if data['type'] == 'routine':
+                save_routine_to_db(data)
                 handle_routine(data, disp)
             elif data['type'] == 'timer':
+                save_timer_to_db(data)
                 run_repeating_timer(data, disp)
-        except Exception:
+        except Exception as e:
+            logging.error(f"[❌] 큐 처리 오류: {e}")
             continue
