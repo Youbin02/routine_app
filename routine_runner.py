@@ -8,6 +8,7 @@ from gpiozero import Button, Buzzer
 from LCD_1inch28 import LCD_1inch28
 from motor_control import run_motor_routine, run_motor_timer
 from ble_sender import send_json_via_ble
+from rfcomm_server import send_json_to_app
 from threading import Thread
 
 # 경로 설정
@@ -132,16 +133,10 @@ def handle_routine(routine_id, minutes, image, disp):
     if r:
         routine_data = {
             "id": r[0],
-            "date": r[1],
-            "start_time": r[2],
-            "routine_minutes": r[3],
-            "icon": r[4],
-            "completed": r[5],
-            "routine_name": r[6],
-            "group_routine_name": r[7]
+            "completed": r[5]
         }
-        logging.info("Sending BLE update...")
-        send_json_via_ble({"type": "routine_update", "routine": routine_data})
+        logging.info("Sending routine completion to app...")
+        send_json_to_app(routine_data)
 
 def get_timer_data():
     conn = connect_db()
