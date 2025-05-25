@@ -23,10 +23,17 @@ def handle_client(client_sock):
                 try:
                     message = json.loads(line)
                     print(f"[🔍] parsing JSON: {message}")
-                    incoming_queue.put(message)
+
+                    # 리스트인 경우 항목별로 분해하여 큐에 저장
+                    if isinstance(message, list):
+                        for item in message:
+                            if isinstance(item, dict):
+                                incoming_queue.put(item)
+                    elif isinstance(message, dict):
+                        incoming_queue.put(message)
 
                     # 응답 전송
-                    response = {"ack": True, "received_type": message.get("type")}
+                    response = {"ack": True, "received_type": "batch" if isinstance(message, list) else message.get("type")}
                     client_sock.send((json.dumps(response) + '\n').encode())
                     print(f"[📤] message send")
                 except json.JSONDecodeError:
@@ -50,7 +57,7 @@ def start_server():
         profiles=[bluetooth.SERIAL_PORT_PROFILE]
     )
 
-    print(f"[🟢] RFCOMM Bluetooth server running... port: {port}")
+    print(f"[🟢] RFCOMM Bluetooth serer running... port: {port}")
 
     try:
         while True:
