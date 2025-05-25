@@ -2,9 +2,12 @@ import bluetooth
 import json
 import sqlite3
 import time
+import os
 import logging
+import threading
 
 DB_PATH = "/home/pi/LCD_final/routine_db.db"
+OUTBOX_PATH = "/tmp/routine_outbox.json"
 
 logging.basicConfig(level=logging.INFO)
 
@@ -38,6 +41,21 @@ def save_to_db(data):
     conn.commit()
     conn.close()
 
+def monitor_outbox_and_send(client_sock):
+    logging.info("[📤] routine complete outbox look start")
+    while True:
+        try:
+            if os.path.exists(OUTBOX_PATH):
+                with open(OUTBOX_PATH, "r") as f:
+                    data = f.read().strip()
+                    if data:
+                        client_sock.send((data + '\n').encode())
+                        logging.info(f"[📤] routine complete data send: {data}")
+                os.remove(OUTBOX_PATH)
+        except Exception as e:
+            logging.error(f"[❌] outbox send failed: {e}")
+        time.sleep(2)
+
 def start_rfcomm_server():
     while True:
         try:
@@ -49,6 +67,9 @@ def start_rfcomm_server():
             logging.info("[🔌] RFCOMM Bluetooth connect wait...")
             client_sock, address = server_sock.accept()
             logging.info(f"[✅] connected: {address}")
+
+            # outbox 전송 스레드 시작
+            threading.Thread(target=monitor_outbox_and_send, args=(client_sock,), daemon=True).start()
 
             buffer = ""
             while True:
@@ -63,7 +84,7 @@ def start_rfcomm_server():
                     if not line:
                         continue
 
-                    logging.info(f"[📥] send data: {line}")
+                    logging.info(f"[📥] recv date: {line}")
                     try:
                         json_data = json.loads(line)
                         if isinstance(json_data, list):
@@ -76,7 +97,7 @@ def start_rfcomm_server():
                     except Exception as e:
                         logging.error(f"[❌] JSON error: {e}")
         except Exception as e:
-            logging.error(f"[❌] connect or receive error: {e}")
+            logging.error(f"[❌] connect or recv error: {e}")
             time.sleep(1)
         finally:
             try:
