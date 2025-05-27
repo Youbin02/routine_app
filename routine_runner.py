@@ -177,12 +177,21 @@ def timer_loop(disp):
     if get_minutes_until_next_routine() <= 5:
         logging.info("Timer blocked due to upcoming routine")
         return
+
     timers = get_timer_data()
     if not timers:
         return
+
     index = 0
     selected = False
-    while True:
+    start_time = time.time()
+    timeout = 60  # 최대 60초 대기
+
+    while time.time() - start_time < timeout:
+        if get_minutes_until_next_routine() <= 5:
+            logging.info("Exiting timer loop due to incoming routine")
+            return
+
         if button1.is_pressed:
             timer = timers[index]
             timer_id, minutes, rest, repeat_count, icon = timer
@@ -194,10 +203,12 @@ def timer_loop(disp):
             index = (index + 1) % len(timers)
             selected = True
             time.sleep(0.3)
+
         elif button2.is_pressed:
             disp.clear()
             logging.info("Timer selection cancelled")
             return
+
         elif selected and button3.is_pressed:
             timer = timers[index - 1]
             timer_id, minutes, rest, repeat_count, icon = timer
@@ -205,7 +216,12 @@ def timer_loop(disp):
             if os.path.exists(image_path):
                 image = Image.open(image_path).resize((240, 240)).rotate(90)
                 run_repeating_timer(timer_id, minutes, rest, repeat_count, disp, image)
-                return
+            return
+
+        time.sleep(0.1)
+
+    logging.info("Timer loop exited due to inactivity timeout")
+    disp.clear()
 
 def run_routine_loop():
     disp = LCD_1inch28()
