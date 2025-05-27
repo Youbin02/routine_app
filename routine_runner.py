@@ -216,7 +216,7 @@ def run_routine_loop():
 
     while True:
         try:
-            routines = get_today_routines()
+            routines = get_today_routines()  # 항상 최신 루틴 조회
             logging.info(f"[🔄] loop repeat: routine {len(routines)}개")
 
             executed = False
@@ -230,11 +230,16 @@ def run_routine_loop():
                         img = Image.open(img_path).resize((240, 240)).rotate(90)
                         Thread(target=run_motor_routine, args=(minutes,)).start()
                         handle_routine(routine_id, minutes, img, disp)
+                        time.sleep(0.5)  # 루틴 상태 업데이트 여유
                         executed = True
                         break  # 루틴 하나 실행 후 루프 재시작
 
-            # 루틴이 없으면 타이머 진입
-            if not executed and get_minutes_until_next_routine() > 5:
+            if executed:
+                logging.info("Routine executed, sleeping before next check")
+                time.sleep(10)  # 루틴 실행 간 여유 시간 확보
+                continue
+
+            if get_minutes_until_next_routine() > 5:
                 logging.info("Entering timer loop")
                 timer_loop(disp)
 
