@@ -106,19 +106,18 @@ def handle_routine(routine_id, minutes, image, disp):
             result = 1
             break
         elif button2.is_pressed:
-            logging.info(f"Routine {routine_id} marked as failed by button2")
-            update_routine_status(routine_id, 0)
-            result = 0
+            logging.info(f"Routine {routine_id} marked as skipped by button2")
+            update_routine_status(routine_id, 2)
+            result = 2
             break
         time.sleep(0.1)
     else:
         logging.info(f"Routine {routine_id} failed due to timeout")
-        update_routine_status(routine_id, 0)
-        result = 0
+        update_routine_status(routine_id, 2)
+        result = 2
 
     disp.clear()
 
-    # ✔ 루틴 정보 조회 및 BLE 송신
     conn = connect_db()
     cursor = conn.cursor()
     cursor.execute("""
